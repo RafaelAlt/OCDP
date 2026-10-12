@@ -1,0 +1,19 @@
+# OCDP allowlist: track only the launcher plus the root files below.
+# Everything else at root (downloaded app, user data, scratch) is ignored.
+/*
+!/launcher/
+!/AGENTS.md
+!/README.md
+!/LICENSE
+!/.gitignore
+
+# Logs are never committed (including launcher\ocdp.log)
+*.log
+*.log.old
+
+# Personal agent notes (never committed; the launcher never touches them)
+**/AGENTS.user.md
+
+# OS/Explorer noise
+**/desktop.ini
+**/Thumbs.db

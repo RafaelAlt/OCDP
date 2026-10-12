@@ -497,12 +497,23 @@ function Get-FileSha512Base64([string]$Path) {
 }
 
 # --- Download + update ----------------------------------------------------
+# Remove a path that may be briefly locked (AV scan, lingering handle):
+# retry a few times before giving up. Returns $true when gone.
+function Remove-PathRetry([string]$Path, [int]$Tries = 5) {
+    for ($i = 1; $i -le $Tries; $i++) {
+        if (-not (Test-Path -LiteralPath $Path)) { return $true }
+        Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction SilentlyContinue
+        if (-not (Test-Path -LiteralPath $Path)) { return $true }
+        Start-Sleep -Seconds 1
+    }
+    return (-not (Test-Path -LiteralPath $Path))
+}
+
 function Invoke-Update([pscustomobject]$Info) {
     if (-not (Test-Path -LiteralPath $Seven)) { Fail (T 'noExtractor' @($Seven)) }
 
     $tmp = Join-Path $env:TEMP 'OCDP'
-    if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Recurse -Force }
-    if (Test-Path -LiteralPath $tmp) { Fail (T 'stageBusy' @($tmp)) }
+    if (-not (Remove-PathRetry $tmp)) { Fail (T 'stageBusy' @($tmp)) }
     New-Item -ItemType Directory -Path $tmp -Force | Out-Null
 
     try {
@@ -538,8 +549,7 @@ function Invoke-Update([pscustomobject]$Info) {
         #    and yields the final files (OpenCode.exe, resources\, locales\).
         Task (T 'taskExtract')
         $newDir = "$AppDir.new"
-        if (Test-Path -LiteralPath $newDir) { Remove-Item -LiteralPath $newDir -Recurse -Force }
-        if (Test-Path -LiteralPath $newDir) { Fail (T 'stageBusy' @($newDir)) }
+        if (-not (Remove-PathRetry $newDir)) { Fail (T 'stageBusy' @($newDir)) }
         $sevenOut = & $Seven x $installer "-o$newDir" -y 2>&1
         if ($LASTEXITCODE -ne 0) {
             # Keep the tail of 7-Zip output in the log: it names the root cause.
@@ -557,12 +567,14 @@ function Invoke-Update([pscustomobject]$Info) {
 
         # 4. Swap: app-64 -> app-64.old ; app-64.new -> app-64
         Task (T 'taskApply')
+        # Processes were stopped at startup, but the download takes minutes:
+        # if anything came back meanwhile, stop it again instead of failing.
+        Get-Process -Name '*opencode*' -ErrorAction SilentlyContinue |
+            Stop-Process -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 2
         if (Test-Path -LiteralPath $AppDir) {
             $oldDir = "$AppDir.old"
-            if (Test-Path -LiteralPath $oldDir) {
-                Remove-Item -LiteralPath $oldDir -Recurse -Force -ErrorAction SilentlyContinue
-            }
-            if (Test-Path -LiteralPath $oldDir) { Fail (T 'oldDirBusy' @($oldDir)) }
+            if (-not (Remove-PathRetry $oldDir)) { Fail (T 'oldDirBusy' @($oldDir)) }
             Move-Item -LiteralPath $AppDir -Destination $oldDir
         }
         # Move .new into place; if that fails, roll the previous install back.

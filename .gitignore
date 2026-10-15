@@ -12,6 +12,12 @@
 *.log
 *.log.old
 
+# Launcher state (previous portable root; rewritten on every run)
+launcher/root.marker
+
+# Local safety backup of the previous launcher (git history has it anyway)
+launcher/*.bak
+
 # Personal agent notes (never committed; the launcher never touches them)
 **/AGENTS.user.md
 
